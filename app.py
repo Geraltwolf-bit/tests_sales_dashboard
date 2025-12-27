@@ -1,12 +1,9 @@
 import pandas as pd
 import streamlit as st
 import plotly.express as px
-import altair as alt
+import plotly.graph_objects as go
 import json
-import matplotlib.pyplot as plt
-import seaborn as sns
 from shapely import wkt
-from shapely.geometry import shape
 
 st.set_page_config(
     page_title='Sales per year',
@@ -14,8 +11,6 @@ st.set_page_config(
     layout='wide',
     initial_sidebar_state='expanded'
 )
-
-alt.themes.enable('dark')
 
 st.markdown("""
 <style>
@@ -33,7 +28,6 @@ st.markdown("""
             }
 
 [data-testid='stMetric']{
-            background-colr: #393939;
             text-align: center;
             padding: 15px 0;
             }
@@ -64,29 +58,64 @@ st.markdown("""
 """, unsafe_allow_html=True
 )
 
-df = pd.read_csv('df.csv')
 gdf = pd.read_csv('gdf.csv')
 
-def wkt_to_geojson(wkt_str):
+def wkt_to_geojson(wkt_str) -> dict:
+    """ 
+    Convert wkt-text into a GeoJSON dictionary that Plotly can use to draw maps
+    Arguments: wkt text
+    Returns: a Python dictionary in GeoJSON format
+    """
     geom = wkt.loads(wkt_str)
     return json.loads(json.dumps(geom.__geo_interface__))
 
 gdf['geometry'] = gdf['geometry'].apply(wkt_to_geojson)
 
-def format_number(num):
+def format_number(num: int) -> str:
+    """
+    Transforms long numbers into a readable format.
+    Arguments: int
+    Returns: str
+    """
     if num > 1_000_000:
         if num % 1_000_000 == 0:
             return f'{num // 1_000_000} M'
         return f'{round(num / 1_000_000, 1)} M'
     return f'{num // 1000} K'
 
+@st.cache_data
+def load_data(file_path):
+    """
+    Load data using cashing decorator that cashes the output.
+    Function doesn't reload every time a user interacts with the dashboard.
+    """
+    return pd.read_csv(file_path)
+
+disease_files = {
+    'Гепатит С': 'df.csv',
+    'Гепатит В': 'hep_b.csv',
+    'ВИЧ': 'hiv.csv'
+}
+
 with st.sidebar:
-    st.title('Yearly sales')
-    year_list = list(df.year.unique())[::-1]
-    selected_year = st.selectbox('Select a year', year_list)
-
-def choropleth(df, gdf, year):
-
+    st.title('Закупки тестов Минздравом')
+    disease_list = list(disease_files.keys())
+    selected_disease = st.selectbox('Выберите заболевание', disease_list)
+    
+    df = load_data(disease_files[selected_disease])
+    
+    year_list = sorted(df['year'].unique(), reverse=True)
+    selected_year = st.selectbox('Выберите год', year_list)
+        
+def choropleth(df, gdf, year) -> go.Figure:
+    """
+    Creates a choropleth map that shows the number of items for each region.
+    Arguments: 
+        df: sales data with columns ['year', 'region', 'quantity']
+        gdf: Geographic data with columns ['name', 'geometry']
+        year: year to display
+    Returns: plotly.graph_objects.Figure: choropleth map
+    """
     sales_year = df[df['year']==year].copy()
     agg_sales = sales_year.groupby('region').agg({'quantity': 'sum'}).reset_index()
 
@@ -109,80 +138,97 @@ def choropleth(df, gdf, year):
         color_continuous_scale='Blues',
         hover_name='name',
         hover_data={'quantity': ':,.0f'},
-        title = f'Regional sales - {year}'
+        range_color=[0, 100_000]
     )
 
     fig.update_geos(
-        fitbounds = 'locations',
+        projection_type = 'mercator',
         visible=False,
         showcountries = False,
-        showcoastlines = False
+        showcoastlines = False,
+        showland = False,
+        showocean = False,
+        showframe = False,
+        lonaxis_range = [20, 180],
+        lataxis_range = [20, 80],
     )
 
-    fig.update_layout(
-        margin = {'r': 0, 't': 50, 'l': 0, 'b': 0},
-        height = 600
-    )
+    fig.update_layout(margin = {'r': 0, 't': 50, 'l': 0, 'b': 0},
+        height = 600)
 
     return fig
 
-col = st.columns((1.5, 4.5, 2), gap = 'medium')
+col = st.columns(1)
 
 with col[0]:
-    st.markdown(f'### In {selected_year}:')
     
-    total_sales = df[df['year'] == selected_year]['total'].sum()
-    total_sales_formatted = format_number(total_sales)
-    st.metric(label = 'Total sum', value = total_sales_formatted, border = True, height = 'content', width = 'stretch')
-    
-    total_quantity = df[df['year'] == selected_year]['quantity'].sum()
-    total_quantity_formatted = format_number(total_quantity)
-    st.metric(label = 'Total quantity', value = total_quantity_formatted, border = True, height = 'content', width = 'stretch')
-    
-    max_price = df[df['year'] == selected_year]['price'].max()
-    st.metric(label = 'Max price', value = f'{max_price:,.2f}', border = True, height = 'content', width = 'stretch')
-    
-    min_price = df[df['year'] == selected_year]['price'].min()
-    st.metric(label = 'Min price', value = f'{min_price:,.2f}', border = True, height = 'content', width = 'stretch')
-    
-    mean_price = df[df['year'] == selected_year]['price'].mean()
-    st.metric(label = 'Mean price', value = f'{mean_price:,.2f}', border = True, height = 'content', width = 'stretch')
-    
-with col[1]:
     fig = choropleth(df, gdf, selected_year)
     st.plotly_chart(fig, use_container_width=True)
     
+    col_1, col_2, col_3, col_4, col_5 = st.columns(5)
+    
+    with col_1:
+        total_sales = df[df['year'] == selected_year]['total'].sum()
+        total_sales_formatted = format_number(total_sales)
+        st.metric(label = 'Объём закупок, руб.', value = total_sales_formatted, border = True, height = 'content', width = 'stretch')
+    
+    with col_2:
+        total_quantity = df[df['year'] == selected_year]['quantity'].sum()
+        total_quantity_formatted = format_number(total_quantity)
+        st.metric(label = 'Количество тестов, шт.', value = total_quantity_formatted, border = True, height = 'content', width = 'stretch')
+    
+    with col_3:
+        max_price = df[df['year'] == selected_year]['price'].max()
+        st.metric(label = 'Максимальная цена', value = f'{max_price:,.2f}', border = True, height = 'content', width = 'stretch')
+    
+    with col_4:
+        mean_price = df[df['year'] == selected_year]['price'].mean()
+        st.metric(label = 'Средняя цена', value = f'{mean_price:,.2f}', border = True, height = 'content', width = 'stretch')
+
+    with col_5:
+        min_price = df[df['year'] == selected_year]['price'].min()
+        st.metric(label = 'Минимальная цена', value = f'{min_price:,.2f}', border = True, height = 'content', width = 'stretch')
+    
+    st.markdown(f'<h4 style="text-align: center;">Топ 5 регионов в {selected_year}:</h4>', unsafe_allow_html = True)
+    
+    col_top_5_price, col_top_5_amount = st.columns(2)
+    
+    with col_top_5_price:
+        st.markdown('##### По объёму закупок в рублях')
+        yearly_data = df[df['year'] == selected_year]
+        region_sales = yearly_data.groupby('region')['total'].sum().reset_index()
+        region_sales = region_sales.sort_values(by = 'total', ascending = False)
+        top5 = region_sales.head(5)
+    
+        for i, (region, sales) in enumerate(zip(top5['region'], top5['total']), 1):
+            st.write(f'{i}) {region}: {sales:,.2f}')
+    
+    with col_top_5_amount:
+        st.markdown('##### По цене')    
+        region_price = yearly_data.groupby('region')['price'].max().reset_index()
+        region_price = region_price.sort_values(by = 'price', ascending = False)
+        top_5 = region_price.head(5)
+        
+        for i, (region, price) in enumerate(zip(top_5['region'], top_5['price']), 1):
+            st.write(f'{i}) {region}: {price:,.2f}')
+    
+    st.markdown(f'<h4 style="text-align: center;">Выводы за 2022 - 2024:</h4>', unsafe_allow_html = True)
+    
     total = df.groupby('year')['total'].sum().reset_index()
-    fig = px.line(total, x = 'year', y = 'total', text = 'total', title = 'Total over the years, RUB')
-    fig.update_traces(texttemplate = '%{text:,.0f}', textposition = 'top center')
+    tot_trend = 'падает' if total.iloc[0, 1] > total.iloc[2, 1] else 'растет'
+    fig = px.line(total, x = 'year', y = 'total', text = 'total', title = f'Объём закупок по выбранному заболеванию в рублях - {tot_trend}')
     fig.update_xaxes(tickmode = 'linear', dtick = 1, tickformat = 'd')
     fig.update_yaxes(tickformat = ',.0f')
+    fig.update_traces(texttemplate="%{y:.3s}", textposition = 'top center')
     st.plotly_chart(fig, use_container_width=True)
-    
+
     price = df.groupby('year')['price'].mean().reset_index()
-    fig = px.line(price, x = 'year', y = 'price', text = 'price', title = 'Mean price over the years, RUB')
+    price_trend = 'растет' if total.iloc[0, 1] > total.iloc[2, 1] else 'падает'
+    fig = px.line(price, x = 'year', y = 'price', text = 'price', title = f'Цена - {price_trend}')
     fig.update_traces(texttemplate = '%{text:,.0f}', textposition = 'top center')
     fig.update_xaxes(tickmode = 'linear', dtick = 1, tickformat = 'd')
     fig.update_yaxes(tickformat = ',.0f')
     st.plotly_chart(fig, use_container_width=True)
 
 
-with col[2]:
-    st.markdown(f'#### Top 5 regions in {selected_year}:')
-    
-    st.markdown('##### By amount')
-    yearly_data = df[df['year'] == selected_year]
-    region_sales = yearly_data.groupby('region')['total'].sum().reset_index()
-    region_sales = region_sales.sort_values(by = 'total', ascending = False)
-    top5 = region_sales.head(5)
-    
-    for i, (region, sales) in enumerate(zip(top5['region'], top5['total']), 1):
-        st.write(f'{i}) {region}: {sales:,.2f}')
-    
-    st.markdown('##### By price')    
-    region_price = yearly_data.groupby('region')['price'].max().reset_index()
-    region_price = region_price.sort_values(by = 'price', ascending = False)
-    top_5 = region_price.head(5)
-    
-    for i, (region, price) in enumerate(zip(top_5['region'], top_5['price']), 1):
-        st.write(f'{i}) {region}: {price:,.2f}')
+
