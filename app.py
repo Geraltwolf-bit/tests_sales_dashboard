@@ -175,7 +175,7 @@ with col[0]:
     with col_2:
         total_quantity = df[df['year'] == selected_year]['quantity'].sum()
         total_quantity_formatted = format_number(total_quantity)
-        st.metric(label = 'Количество тестов, шт.', value = total_quantity_formatted, border = True, height = 'content', width = 'stretch')
+        st.metric(label = 'Кол-во тестов, шт.', value = total_quantity_formatted, border = True, height = 'content', width = 'stretch')
     
     with col_3:
         max_price = df[df['year'] == selected_year]['price'].max()
@@ -229,3 +229,6 @@ with col[0]:
     fig.update_xaxes(tickmode = 'linear', dtick = 1, tickformat = 'd')
     fig.update_yaxes(tickformat = ',.0f')
     st.plotly_chart(fig, use_container_width=True)
+    
+if __name__ == '__main__':
+    pass
