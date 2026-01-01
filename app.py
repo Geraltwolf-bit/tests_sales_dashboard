@@ -19,7 +19,7 @@ st.markdown("""
             padding-right: 2rem;
             padding-top: 1rem;
             padding-bottom: 0rem;
-            margin-bottom: -7remm;
+            margin-bottom: -7rem;
             }
 
 [data-testid='stVerticalBlock']{
@@ -229,6 +229,3 @@ with col[0]:
     fig.update_xaxes(tickmode = 'linear', dtick = 1, tickformat = 'd')
     fig.update_yaxes(tickformat = ',.0f')
     st.plotly_chart(fig, use_container_width=True)
-
-
-
